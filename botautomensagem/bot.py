@@ -2,6 +2,7 @@ import asyncio
 import os
 import discord
 from discord.ext import commands
+from aiohttp import web
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -9,7 +10,6 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==================== CONFIGURAÇÕES DOS 3 CANAIS ====================
-# Aqui você liga cada ID de canal à sua respectiva mensagem:
 CANAIS_E_MENSAGENS = {
     # 1º Canal
     1526730887885226027: [
@@ -25,14 +25,12 @@ CANAIS_E_MENSAGENS = {
     ],
 }
 
-# Tempo em segundos (900 segundos = 15 minutos)
-INTERVALO = 900
+INTERVALO = 900  # 15 minutos
 # ==================================================================
 
 
 async def enviar_e_apagar():
     await bot.wait_until_ready()
-    # Guarda a última mensagem enviada em cada canal para poder apagar depois
     ultimas_mensagens = {}
 
     while not bot.is_closed():
@@ -40,23 +38,16 @@ async def enviar_e_apagar():
             canal = bot.get_channel(canal_id)
             if canal and mensagens:
                 try:
-                    # Pega a primeira mensagem da lista daquele canal
                     texto_atual = mensagens[0]
-
-                    # Envia a nova mensagem
                     nova_mensagem = await canal.send(texto_atual)
 
-                    # Apaga a mensagem anterior daquele canal específico, se existir
                     if canal_id in ultimas_mensagens:
                         try:
                             await ultimas_mensagens[canal_id].delete()
                         except discord.HTTPException:
                             pass
 
-                    # Salva a mensagem atual como a última enviada
                     ultimas_mensagens[canal_id] = nova_mensagem
-
-                    # Rotaciona a lista para a próxima mensagem daquele canal ir na próxima rodada
                     mensagens.append(mensagens.pop(0))
 
                 except Exception as e:
@@ -65,12 +56,34 @@ async def enviar_e_apagar():
         await asyncio.sleep(INTERVALO)
 
 
+# Servidor web simples para o Render achar que é um site e não fechar
+async def handle(request):
+    return web.Response(text="Bot do Discord rodando com sucesso!")
+
+
+async def start_web_server():
+    app = web.Application()
+    app.add_routes([web.get("/", handle)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # O Render exige que você use a porta que ele define automaticamente no ambiente
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+
 @bot.event
 async def on_ready():
     print(f"Bot conectado como {bot.user}!")
     bot.loop.create_task(enviar_e_apagar())
 
 
-# Puxa o token de forma segura das variáveis do Render
-TOKEN = os.getenv("DISCORD_TOKEN")
-bot.run(TOKEN)
+async def main():
+    # Inicia o servidor web e o bot ao mesmo tempo
+    await start_web_server()
+    TOKEN = os.getenv("DISCORD_TOKEN")
+    await bot.start(TOKEN)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
