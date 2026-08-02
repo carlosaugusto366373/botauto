@@ -30,60 +30,64 @@ INTERVALO = 900  # 15 minutos
 
 
 async def enviar_e_apagar():
-    await bot.wait_until_ready()
-    ultimas_mensagens = {}
+  await bot.wait_until_ready()
+  ultimas_mensagens = {}
 
-    while not bot.is_closed():
-        for canal_id, mensagens in CANAIS_E_MENSAGENS.items():
-            canal = bot.get_channel(canal_id)
-            if canal and mensagens:
-                try:
-                    texto_atual = mensagens[0]
-                    nova_mensagem = await canal.send(texto_atual)
+  while not bot.is_closed():
+    for canal_id, mensagens in CANAIS_E_MENSAGENS.items():
+      canal = bot.get_channel(canal_id)
+      if canal and mensagens:
+        try:
+          texto_atual = mensagens[0]
+          nova_mensagem = await canal.send(texto_atual)
 
-                    if canal_id in ultimas_mensagens:
-                        try:
-                            await ultimas_mensagens[canal_id].delete()
-                        except discord.HTTPException:
-                            pass
+          if canal_id in ultimas_mensagens:
+            try:
+              await ultimas_mensagens[canal_id].delete()
+            except discord.HTTPException:
+              pass
 
-                    ultimas_mensagens[canal_id] = nova_mensagem
-                    mensagens.append(mensagens.pop(0))
+          ultimas_mensagens[canal_id] = nova_mensagem
+          mensagens.append(mensagens.pop(0))
 
-                except Exception as e:
-                    print(f"Erro no canal {canal_id}: {e}")
+        except Exception as e:
+          print(f"Erro no canal {canal_id}: {e}")
 
-        await asyncio.sleep(INTERVALO)
+    await asyncio.sleep(INTERVALO)
 
 
 # Servidor web simples para o Render achar que é um site e não fechar
 async def handle(request):
-    return web.Response(text="Bot do Discord rodando com sucesso!")
+  return web.Response(text="Bot do Discord rodando com sucesso!")
 
 
 async def start_web_server():
-    app = web.Application()
-    app.add_routes([web.get("/", handle)])
-    runner = web.AppRunner(app)
-    await runner.setup()
-    # O Render exige que você use a porta que ele define automaticamente no ambiente
-    port = int(os.environ.get("PORT", 10000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
+  app = web.Application()
+  app.add_routes([web.get("/", handle)])
+  runner = web.AppRunner(app)
+  await runner.setup()
+  port = int(os.environ.get("PORT", 10000))
+  site = web.TCPSite(runner, "0.0.0.0", port)
+  await site.start()
 
 
 @bot.event
 async def on_ready():
-    print(f"Bot conectado como {bot.user}!")
-    bot.loop.create_task(enviar_e_apagar())
+  print(f"Bot conectado como {bot.user}!")
+  bot.loop.create_task(enviar_e_apagar())
 
 
 async def main():
-    # Inicia o servidor web e o bot ao mesmo tempo
-    await start_web_server()
-    TOKEN = os.getenv("DISCORD_TOKEN")
-    await bot.start(TOKEN)
+  await start_web_server()
+  TOKEN = os.getenv("DISCORD_TOKEN")
+  if not TOKEN:
+    print(
+        "Erro: A variável de ambiente DISCORD_TOKEN não foi encontrada no"
+        " Render!"
+    )
+    return
+  await bot.start(TOKEN)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+  asyncio.run(main())
