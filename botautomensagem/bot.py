@@ -1,7 +1,7 @@
 import asyncio
 import os
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from aiohttp import web
 
 intents = discord.Intents.default()
@@ -25,38 +25,50 @@ CANAIS_E_MENSAGENS = {
     ],
 }
 
-INTERVALO = 900  # 15 minutos
+# Dicionário global para guardar a última mensagem enviada em cada canal
+ultimas_mensagens = {}
 # ==================================================================
 
 
+# Tarefa automática oficial (a cada 15 minutos)
+@tasks.loop(minutes=15)
 async def enviar_e_apagar():
+  print("🔄 Executando o ciclo de automensagens...")
+  for canal_id, mensagens in CANAIS_E_MENSAGENS.items():
+    canal = bot.get_channel(canal_id)
+    if canal:
+      try:
+        texto_atual = mensagens[0]
+        nova_mensagem = await canal.send(texto_atual)
+        print(f"✅ Mensagem enviada no canal {canal_id}")
+
+        # Apaga a mensagem anterior se existir
+        if canal_id in ultimas_mensagens:
+          try:
+            await ultimas_mensagens[canal_id].delete()
+          except discord.HTTPException:
+            pass
+
+        ultimas_mensagens[canal_id] = nova_mensagem
+        mensagens.append(mensagens.pop(0))
+
+      except Exception as e:
+        print(f"❌ Erro ao enviar no canal {canal_id}: {e}")
+    else:
+      print(
+          f"⚠️ Canal {canal_id} não encontrado! Verifique se o ID está correto"
+          " e se o bot está no servidor."
+      )
+
+
+@enviar_e_apagar.before_loop
+async def before_enviar_e_apagar():
+  # Aguarda o bot ficar totalmente pronto antes de iniciar o loop pela primeira vez
   await bot.wait_until_ready()
-  ultimas_mensagens = {}
-
-  while not bot.is_closed():
-    for canal_id, mensagens in CANAIS_E_MENSAGENS.items():
-      canal = bot.get_channel(canal_id)
-      if canal and mensagens:
-        try:
-          texto_atual = mensagens[0]
-          nova_mensagem = await canal.send(texto_atual)
-
-          if canal_id in ultimas_mensagens:
-            try:
-              await ultimas_mensagens[canal_id].delete()
-            except discord.HTTPException:
-              pass
-
-          ultimas_mensagens[canal_id] = nova_mensagem
-          mensagens.append(mensagens.pop(0))
-
-        except Exception as e:
-          print(f"Erro no canal {canal_id}: {e}")
-
-    await asyncio.sleep(INTERVALO)
+  print("⏳ Bot pronto! A primeira rodada de mensagens automáticas vai rodar agora.")
 
 
-# Servidor web simples para o Render achar que é um site e não fechar
+# Servidor web simples para o Render
 async def handle(request):
   return web.Response(text="Bot do Discord rodando com sucesso!")
 
@@ -74,7 +86,14 @@ async def start_web_server():
 @bot.event
 async def on_ready():
   print(f"Bot conectado como {bot.user}!")
-  bot.loop.create_task(enviar_e_apagar())
+  # Inicia o loop de tarefas se já não estiver rodando
+  if not enviar_e_apagar.is_running():
+    enviar_e_apagar.start()
+
+
+@bot.command()
+async def testar(ctx):
+  await ctx.send("Pong! O bot está ativo e respondendo aos comandos.")
 
 
 async def main():
